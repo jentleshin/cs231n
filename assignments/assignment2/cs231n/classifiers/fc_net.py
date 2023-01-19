@@ -156,41 +156,52 @@ class FullyConnectedNet(object):
         # layer, etc.                                                              #
         ############################################################################
         # *****START OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
+        
+        caches = {}
 
-        def parse(string, count):
-          [name, where] = string.split("_")
-          if where == "self":
-            return getattr(self, name)
-          return getattr(self, where)["{}{}".format(name, count)]
+        if self.use_dropout:
+          Func = {
+            "n":(hidden_forward, "params/W", "params/b", "dropout_param"),
+            "max":(affine_forward, "params/W", "params/b")
+          }
+        else:
+          Func = {
+            "n":(affine_relu_forward, "params/W", "params/b"),
+            "max":(affine_forward, "params/W", "params/b")
+          }
 
         ###########################################################################
-        def repeat(Func, params, caches, count, count_max, initial_input):
+
+        def parse(string, count):
+          if "/" not in string:
+            return getattr(self, string)
+          [where, name] = string.split("/")
+          return getattr(self, where)["{}{}".format(name, count)]
+        
+        ###########################################################################
+        
+        def repeat(Func, caches, count, count_max, initial_input):
 
           fn ,*fn_args_st = Func["n"]
           fn_args = [ parse(st,count) for st in fn_args_st ]
           fmax ,*fmax_args_st = Func["max"]
           fmax_args = [ parse(st,count) for st in fmax_args_st ]
-
+          
           if count == 1 :
             H, cache = fn(initial_input, *fn_args)
             caches["c{}".format(count)] = cache
             return H, caches
 
-          X = repeat(Func, params, caches, count-1, count_max, initial_input)[0]  
+          X = repeat(Func, caches, count-1, count_max, initial_input)[0]
           H, cache = fmax(X, *fmax_args) if (count == count_max) else fn(X, *fn_args)
           caches["c{}".format(count)] = cache
           return H, caches
-        ###########################################################################
-
+        
+        ##########################################################################
+        
         count_max = self.num_layers-1
-        count = count_max     
-        caches = {}
-        Func = {
-          "n":(affine_relu_forward, "W_params", "b_params"),
-          "max":(affine_forward, "W_params", "b_params")
-        }
-
-        scores, caches = repeat(Func, self.params, caches, count, count_max, X)      
+        count = count_max 
+        scores, caches = repeat(Func, caches, count, count_max, X)      
 
         # *****END OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
         ############################################################################
@@ -217,40 +228,61 @@ class FullyConnectedNet(object):
         ############################################################################
         # *****START OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
         
+        loss, dL = softmax_loss(scores, y)
+        
         ###########################################################################
         # reccursive function for calculating backpropagation                     #
         # count flows from 1 to max, corresponding to hidden layer number.        #
         ###########################################################################
 
-        def reverse(Func, params, caches, grads, count, count_max, initial_input):
+        if self.use_dropout:
+          Func = {
+            "n":(hidden_backward, "W", "b"),
+            "max":(affine_backward, "W", "b")
+          }
+        else:
+          Func = {
+            "n":(affine_relu_backward, "W", "b"),
+            "max":(affine_backward, "W", "b")
+          }
+        
+        
+        ###########################################################################
+
+        def paser (st, cnt):
+          return "{}{}".format(st,cnt)
+
+        ###########################################################################
+
+        def reverse(Func, caches, grads, count, count_max, initial_input):
           cache = caches["c{}".format(count)]
+
+          fn ,*fn_args_st = Func["n"]
+          fn_args_name = [ paser(st,count) for st in fn_args_st ]
+          fmax ,*fmax_args_st = Func["max"]
+          fmax_args_name = [ paser(st,count) for st in fmax_args_st ]
 
           # initial condition
           if count == count_max :
-            dX, dW, db = Func["max"](initial_input, cache)
-            grads["W{}".format(count)] = dW
-            grads["b{}".format(count)] = db
+            dX, *D = fmax(initial_input, cache)
+            for name, d in zip(fmax_args_name, D):
+              grads[name] = d
             return dX, grads
 
-          dout = reverse(Func, params, caches, grads, count+1, count_max, initial_input)[0]  
-          dX, dW, db = Func["1" if (count == 1) else "n"](dout, cache)
-          grads["W{}".format(count)] = dW
-          grads["b{}".format(count)] = db
+          dout = reverse(Func, caches, grads, count+1, count_max, initial_input)[0]  
+          dX, *D = fn(dout, cache)
+          for name, d in zip(fmax_args_name, D):
+              grads[name] = d
           return dX, grads
+        
         ###########################################################################
-
+        
         count = 1     
         count_max = self.num_layers-1
-        Func = {
-          "1":affine_relu_backward,
-          "n":affine_relu_backward,
-          "max":affine_backward,
-        }
+        dX, grads = reverse(Func, caches, grads, count, count_max, dL)
 
-        loss, dL = softmax_loss(scores, y)
-        dX, grads = reverse(Func, self.params, caches, grads, count, count_max, dL)
+        ###########################################################################
         
-
         # add regularization
         for i in range(self.num_layers-1):
           W = self.params["W{}".format(count)]
