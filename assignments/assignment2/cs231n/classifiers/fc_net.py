@@ -84,7 +84,11 @@ class FullyConnectedNet(object):
         for i in range(self.num_layers-1) :
           self.params['W{}'.format(i+1)] = rng.normal(loc=0.0, scale=weight_scale, size=(dims[i], dims[i+1]))
           self.params['b{}'.format(i+1)] = np.zeros(hidden_dims[i])
- 
+        if self.normalization == "batchnorm":
+          for i in range(self.num_layers-2) :
+            self.params['gamma{}'.format(i+1)] = np.ones(hidden_dims[i])
+            self.params['beta{}'.format(i+1)] = np.zeros(hidden_dims[i])
+
         # *****END OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
         ############################################################################
         #                             END OF YOUR CODE                             #
@@ -159,11 +163,24 @@ class FullyConnectedNet(object):
         
         caches = {}
 
-        if self.use_dropout:
+        if self.use_dropout and self.normalization != "batchnorm":
           Func = {
-            "n":(hidden_forward, "params/W", "params/b", "dropout_param"),
+            "n":(affine_relu_dropout_forward, "params/W", "params/b", "dropout_param"),
             "max":(affine_forward, "params/W", "params/b")
           }
+
+        elif ~self.use_dropout and self.normalization == "batchnorm":
+          Func = {
+            "n":(affine_batchnorm_relu_forward, "params/W", "params/b", "params/gamma", "params/beta", "bn_params"),
+            "max":(affine_forward, "params/W", "params/b")
+          }
+
+        elif self.use_dropout and self.normalization == "batchnorm":
+          Func = {
+            "n":(affine_batchnorm_relu_dropout_forward, "params/W", "params/b", "params/gamma", "params/beta", "bn_params", "dropout_param"),
+            "max":(affine_forward, "params/W", "params/b")
+          }
+
         else:
           Func = {
             "n":(affine_relu_forward, "params/W", "params/b"),
@@ -174,27 +191,38 @@ class FullyConnectedNet(object):
 
         def parse(string, count):
           if "/" not in string:
+            if "bn_params" == string:
+              return getattr(self, string)[count-1]
             return getattr(self, string)
           [where, name] = string.split("/")
-          return getattr(self, where)["{}{}".format(name, count)]
+          return getattr(self, where)[name + str(count)]
         
         ###########################################################################
         
         def repeat(Func, caches, count, count_max, initial_input):
-
-          fn ,*fn_args_st = Func["n"]
-          fn_args = [ parse(st,count) for st in fn_args_st ]
-          fmax ,*fmax_args_st = Func["max"]
-          fmax_args = [ parse(st,count) for st in fmax_args_st ]
-          
+            
           if count == 1 :
+            fn ,*fn_args_st = Func["n"]
+            fn_args = [ parse(st,count) for st in fn_args_st ]
             H, cache = fn(initial_input, *fn_args)
             caches["c{}".format(count)] = cache
+            
             return H, caches
 
           X = repeat(Func, caches, count-1, count_max, initial_input)[0]
-          H, cache = fmax(X, *fmax_args) if (count == count_max) else fn(X, *fn_args)
+
+          if count == count_max:
+            fmax ,*fmax_args_st = Func["max"]
+            fmax_args = [ parse(st,count) for st in fmax_args_st ]
+            H, cache = fmax(X, *fmax_args) 
+          
+          else:
+            fn ,*fn_args_st = Func["n"]
+            fn_args = [ parse(st,count) for st in fn_args_st ]
+            H, cache = fn(X, *fn_args)
+          
           caches["c{}".format(count)] = cache
+          
           return H, caches
         
         ##########################################################################
@@ -235,9 +263,19 @@ class FullyConnectedNet(object):
         # count flows from 1 to max, corresponding to hidden layer number.        #
         ###########################################################################
 
-        if self.use_dropout:
+        if self.use_dropout and self.normalization != "batchnorm":
           Func = {
-            "n":(hidden_backward, "W", "b"),
+            "n":(affine_relu_dropout_backward, "W", "b"),
+            "max":(affine_backward, "W", "b")
+          }
+        elif ~self.use_dropout and self.normalization == "batchnorm":
+          Func = {
+            "n":(affine_batchnorm_relu_backward, "W", "b", "gamma", "beta"),
+            "max":(affine_backward, "W", "b")
+          }
+        elif self.use_dropout and self.normalization == "batchnorm":
+          Func = {
+            "n":(affine_batchnorm_relu_dropout_backward, "W", "b", "gamma", "beta"),
             "max":(affine_backward, "W", "b")
           }
         else:
@@ -245,33 +283,26 @@ class FullyConnectedNet(object):
             "n":(affine_relu_backward, "W", "b"),
             "max":(affine_backward, "W", "b")
           }
-        
-        
-        ###########################################################################
-
-        def paser (st, cnt):
-          return "{}{}".format(st,cnt)
 
         ###########################################################################
 
         def reverse(Func, caches, grads, count, count_max, initial_input):
           cache = caches["c{}".format(count)]
-
-          fn ,*fn_args_st = Func["n"]
-          fn_args_name = [ paser(st,count) for st in fn_args_st ]
-          fmax ,*fmax_args_st = Func["max"]
-          fmax_args_name = [ paser(st,count) for st in fmax_args_st ]
-
+          
           # initial condition
           if count == count_max :
+            fmax ,*fmax_args_st = Func["max"]
+            fmax_args_name = [ st + str(count) for st in fmax_args_st ]
             dX, *D = fmax(initial_input, cache)
             for name, d in zip(fmax_args_name, D):
               grads[name] = d
             return dX, grads
 
+          fn ,*fn_args_st = Func["n"]
+          fn_args_name = [ st + str(count) for st in fn_args_st ]
           dout = reverse(Func, caches, grads, count+1, count_max, initial_input)[0]  
           dX, *D = fn(dout, cache)
-          for name, d in zip(fmax_args_name, D):
+          for name, d in zip(fn_args_name, D):
               grads[name] = d
           return dX, grads
         
@@ -284,14 +315,16 @@ class FullyConnectedNet(object):
         ###########################################################################
         
         # add regularization
-        for i in range(self.num_layers-1):
-          W = self.params["W{}".format(count)]
-          dW = grads["W{}".format(count)]
+        # not when using batch/layer normalization
+        if self.normalization != "batchnorm" and self.normalization != "layernorm":
+
+          for i in range(self.num_layers-1):
+            W = self.params["W{}".format(count)]
+            dW = grads["W{}".format(count)]
+            
+            loss += 0.5 * self.reg * np.sum(W * W)
+            grads["W{}".format(count)] += self.reg * W 
           
-          loss += 0.5 * self.reg * np.sum(W * W)
-          grads["W{}".format(count)] += self.reg * W 
-
-
         # *****END OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
         ############################################################################
         #                             END OF YOUR CODE                             #
