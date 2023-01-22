@@ -63,7 +63,24 @@ class ThreeLayerConvNet(object):
         ############################################################################
         # *****START OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
 
-        pass
+        rng = np.random.default_rng()
+        C, H, W = input_dim
+        
+        # conv layer params
+        W1_shape = num_filters, C, filter_size, filter_size
+        self.params["W1"] = rng.normal(loc=0.0, scale=weight_scale, size=W1_shape)
+        self.params["b1"] = np.zeros(num_filters)
+        
+        # hidden affine layer params
+        # H, W are preserved
+        W2_shape = num_filters*(H//2)*(W//2), hidden_dim
+        self.params["W2"] = rng.normal(loc=0.0, scale=weight_scale, size=W2_shape)
+        self.params["b2"] = np.zeros(hidden_dim)
+
+        # output affine layer params
+        W3_shape = hidden_dim, num_classes
+        self.params["W3"] = rng.normal(loc=0.0, scale=weight_scale, size=W3_shape)
+        self.params["b3"] = np.zeros(num_classes)
 
         # *****END OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
         ############################################################################
@@ -102,7 +119,10 @@ class ThreeLayerConvNet(object):
         ############################################################################
         # *****START OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
 
-        pass
+        H1, cache1 = conv_relu_pool_forward(X, W1, b1, conv_param, pool_param)
+        H2, cache2 = affine_relu_forward(H1, W2, b2)
+        H3, cache3 = affine_forward(H2, W3, b3)
+        scores = H3
 
         # *****END OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
         ############################################################################
@@ -125,7 +145,23 @@ class ThreeLayerConvNet(object):
         ############################################################################
         # *****START OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
 
-        pass
+        loss, dx = softmax_loss(H3, y)
+        reg_frac = 0.5 * self.reg * (np.sum(W1*W1) + np.sum(W2*W2) + np.sum(W3*W3))
+        loss += reg_frac
+
+        ############################################################################
+
+        dx, dW3, db3 = affine_backward(dx, cache3) 
+        dx, dW2, db2 = affine_relu_backward(dx, cache2)
+        dx, dW1, db1 = conv_relu_pool_backward(dx, cache1)
+
+        dW3 += self.reg * dW3
+        dW2 += self.reg * dW2
+        dW1 += self.reg * dW1 
+
+        grads["W1"], grads["b1"] = dW1, db1
+        grads["W2"], grads["b2"] = dW2, db2
+        grads["W3"], grads["b3"] = dW3, db3
 
         # *****END OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
         ############################################################################

@@ -1,2 +1,4 @@
 **/datasets/
 **/__pycache__/
+**/build/
+**/im2col_cython.*
