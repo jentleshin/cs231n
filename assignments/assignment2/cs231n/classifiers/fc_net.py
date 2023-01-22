@@ -81,14 +81,14 @@ class FullyConnectedNet(object):
         dims.extend(hidden_dims)
         dims.append(num_classes)
 
-        for i in range(self.num_layers-1) :
+        for i in range(self.num_layers) :
           self.params['W{}'.format(i+1)] = rng.normal(loc=0.0, scale=weight_scale, size=(dims[i], dims[i+1]))
-          self.params['b{}'.format(i+1)] = np.zeros(hidden_dims[i])
+          self.params['b{}'.format(i+1)] = np.zeros(dims[i+1])
+        
         if self.normalization == "batchnorm":
-          for i in range(self.num_layers-2) :
-            self.params['gamma{}'.format(i+1)] = np.ones(hidden_dims[i])
-            self.params['beta{}'.format(i+1)] = np.zeros(hidden_dims[i])
-
+          for i in range(len(hidden_dims)) :
+            self.params['gamma{}'.format(i+1)] = np.ones(dims[i+1])
+            self.params['beta{}'.format(i+1)] = np.zeros(dims[i+1])
         # *****END OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
         ############################################################################
         #                             END OF YOUR CODE                             #
@@ -227,7 +227,7 @@ class FullyConnectedNet(object):
         
         ##########################################################################
         
-        count_max = self.num_layers-1
+        count_max = self.num_layers
         count = count_max 
         scores, caches = repeat(Func, caches, count, count_max, X)      
 
@@ -309,7 +309,7 @@ class FullyConnectedNet(object):
         ###########################################################################
         
         count = 1     
-        count_max = self.num_layers-1
+        count_max = self.num_layers
         dX, grads = reverse(Func, caches, grads, count, count_max, dL)
 
         ###########################################################################

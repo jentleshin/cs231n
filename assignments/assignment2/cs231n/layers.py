@@ -288,7 +288,7 @@ def batchnorm_forward(x, gamma, beta, bn_param):
         #######################################################################
         # *****START OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
 
-        x1 = x-running_mean / np.sqrt(running_var + eps) #broadcasting
+        x1 = (x - running_mean) / np.sqrt(running_var + eps) #broadcasting
         out = gamma * x1 + beta
 
         # *****END OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
@@ -382,7 +382,7 @@ def batchnorm_backward_alt(dout, cache):
     dbeta = np.sum(dout, axis=0)
     dgamma = np.sum(dout * x1, axis=0)
     
-    dx = (dout - (np.tile(dbeta, (N,1)) + dgamma * x1) / N) * gamma / sigma
+    dx = (dout - (dbeta + dgamma * x1) / N) * gamma / sigma
 
     # *****END OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
     ###########################################################################
@@ -427,7 +427,17 @@ def layernorm_forward(x, gamma, beta, ln_param):
     ###########################################################################
     # *****START OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
 
-    pass
+    N, D = x.shape
+    
+    mean = np.sum(x, axis=1, keepdims=True) / D
+    centered_x = x-mean
+    var = np.sum(centered_x*centered_x, axis=1, keepdims=True) / D
+    sigma = np.sqrt(var + eps)
+
+    x1 = centered_x / sigma
+    out = x1 * gamma + beta
+
+    cache = x1, sigma, gamma
 
     # *****END OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
     ###########################################################################
@@ -460,8 +470,18 @@ def layernorm_backward(dout, cache):
     # still apply!                                                            #
     ###########################################################################
     # *****START OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
-
-    pass
+    
+    x1, sigma, gamma = cache
+    N, D = dout.shape
+    
+    dgamma = np.sum(dout * x1, axis=0)
+    dbeta = np.sum(dout, axis=0)
+    
+    temp = dout * gamma
+    temp1 = np.sum(temp, axis=1, keepdims=True)
+    temp2 = np.sum(temp * x1, axis=1, keepdims=True)
+    
+    dx = (temp - (temp1 + x1*temp2) / D) / sigma
 
     # *****END OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
     ###########################################################################
@@ -508,9 +528,7 @@ def dropout_forward(x, dropout_param):
         # *****START OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
         
         mask = np.random.rand(*x.shape) < p
-        #mask = np.random.choice([1, 0], size=x.shape, p=[p,1-p])
         out = x * mask / p
-        #out = x * mask
 
         # *****END OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
         #######################################################################
