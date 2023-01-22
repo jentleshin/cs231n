@@ -1,6 +1,7 @@
 from builtins import range
 import numpy as np
 from numpy.core.fromnumeric import var
+from numpy.core.numeric import zeros_like
 
 
 def affine_forward(x, w, b):
@@ -596,7 +597,30 @@ def conv_forward_naive(x, w, b, conv_param):
     ###########################################################################
     # *****START OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
 
-    pass
+    pad = conv_param['pad']
+    stride = conv_param['stride']
+
+    N, C, H, W = x.shape
+    F, C, HH, WW = w.shape
+
+    Hout = int(1 + (H + 2 * pad - HH) / stride)
+    Wout = int(1 + (W + 2 * pad - WW) / stride)
+
+    pad_x = np.pad(x, ((0,0),(0,0),(pad,pad),(pad,pad)))
+
+    #filters
+    flatten_w = w.reshape(F, C*HH*WW)
+
+    for i in range(Hout):
+      for j in range(Wout):
+        flatten_x = pad_x[:,:,(i*stride):(i*stride+HH),(j*stride):(j*stride+WW)].reshape(N, C*HH*WW)
+        
+        if i==0 and j==0:
+          out = flatten_x @ flatten_w.T + b
+        else:
+          out = np.dstack((out, flatten_x @ flatten_w.T + b))
+    
+    out = out.reshape((N,F,Hout,Wout))
 
     # *****END OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
     ###########################################################################
@@ -624,7 +648,32 @@ def conv_backward_naive(dout, cache):
     ###########################################################################
     # *****START OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
 
-    pass
+    N, F, Hout, Wout = dout.shape
+    x, w, b, conv_param = cache
+    F, C, HH, WW = w.shape
+    pad = conv_param['pad']
+    stride = conv_param['stride']
+
+    pad_x = np.pad(x, ((0,0),(0,0),(pad,pad),(pad,pad)))
+    flatten_w = w.reshape((F, C*HH*WW))
+    
+    dw = np.zeros_like(flatten_w)
+    db = np.zeros_like(b)
+    dx = np.zeros_like(pad_x)
+
+    for i in range(Hout):
+      for j in range(Wout):
+        flatten_x = pad_x[:,:,(i*stride):(i*stride+HH),(j*stride):(j*stride+WW)].reshape(N, C*HH*WW)
+        flatten_dout = dout[:,:,[i],[j]].reshape((N, F))
+        
+        dw += flatten_dout.T @ flatten_x
+        db += np.sum(flatten_dout, axis=0)
+        
+        dx_frac = (flatten_dout @ flatten_w).reshape((N,C,HH,WW))
+        dx[:,:,(i*stride):(i*stride+HH),(j*stride):(j*stride+WW)] += dx_frac
+
+    dx = dx[:,:,pad:-pad,pad:-pad] 
+    dw = dw.reshape(w.shape)
 
     # *****END OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
     ###########################################################################
@@ -658,8 +707,26 @@ def max_pool_forward_naive(x, pool_param):
     # TODO: Implement the max-pooling forward pass                            #
     ###########################################################################
     # *****START OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
+    
+    N, C, H, W = x.shape
 
-    pass
+    pool_height = pool_param['pool_height']
+    pool_width = pool_param['pool_width']
+    stride = pool_param['stride']
+
+    Hout = int(1 + (H - pool_height) / stride)
+    Wout = int(1 + (W - pool_width) / stride)
+
+    for i in range(Hout):
+      for j in range(Wout):
+        x_slice = x[:,:,(i*stride):(i*stride+pool_height),(j*stride):(j*stride+pool_width)]
+        x_max = np.amax(x_slice,axis=(2,3))
+        if i==0 and j==0:
+          out = x_max
+        else:
+          out = np.dstack((out,x_max))
+          
+    out = out.reshape((N, C, Hout, Wout))
 
     # *****END OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
     ###########################################################################
@@ -684,8 +751,35 @@ def max_pool_backward_naive(dout, cache):
     # TODO: Implement the max-pooling backward pass                           #
     ###########################################################################
     # *****START OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
+    
+    x, pool_param = cache
+    pool_height = pool_param['pool_height']
+    pool_width = pool_param['pool_width']
+    stride = pool_param['stride']
 
-    pass
+    #N, C, H, W = x.shape
+    N, C, Hout, Wout = dout.shape
+    dx = zeros_like(x)
+    
+    #unit for broadcasting
+    unit = N, C, 1
+
+    for i in range(Hout):
+      for j in range(Wout):
+        x_slice = x[:,:,(i*stride):(i*stride+pool_height),(j*stride):(j*stride+pool_width)]
+        flatten_x = x_slice.reshape((N, C, pool_height*pool_width))
+        
+        argmax = np.argmax(flatten_x, axis=2).reshape(unit)
+        k = np.tile(np.arange(pool_height*pool_width), unit)
+        mask = (k == argmax).astype(int)
+        dout_frac =  dout[:,:,i,j].reshape(unit)
+        
+        dx_frac = (mask * dout_frac).reshape(N,C,pool_height,pool_width)
+        dx[:,:,(i*stride):(i*stride+pool_height),(j*stride):(j*stride+pool_width)] += dx_frac
+      
+        
+
+
 
     # *****END OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
     ###########################################################################
