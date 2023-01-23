@@ -838,8 +838,12 @@ def spatial_batchnorm_forward(x, gamma, beta, bn_param):
     ###########################################################################
     # *****START OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
 
-    pass
-
+    N, C, H, W = x.shape
+    
+    x1 = np.transpose(x, axes=[0, 2, 3, 1]).reshape((N*H*W, C))
+    x2, cache = batchnorm_forward(x1, gamma, beta, bn_param)
+    out = np.transpose(x2.reshape(N, H, W, C), axes=[0, 3, 1, 2])
+    
     # *****END OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
     ###########################################################################
     #                             END OF YOUR CODE                            #
@@ -870,8 +874,12 @@ def spatial_batchnorm_backward(dout, cache):
     # Your implementation should be very short; ours is less than five lines. #
     ###########################################################################
     # *****START OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
+           
+    N, C, H, W = dout.shape
 
-    pass
+    dout1 = np.transpose(dout, axes=[0, 2, 3, 1]).reshape((N*H*W, C))
+    dx1, dgamma, dbeta = batchnorm_backward_alt(dout1, cache)
+    dx = np.transpose(dx1.reshape(N, H, W, C), axes=[0, 3, 1, 2])
 
     # *****END OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
     ###########################################################################
@@ -912,7 +920,25 @@ def spatial_groupnorm_forward(x, gamma, beta, G, gn_param):
     ###########################################################################
     # *****START OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
 
-    pass
+    N, C, H, W = x.shape
+    K = C // G
+    group_shape = N*K, G*H*W
+
+    x1 = x.reshape(group_shape)
+    
+    ############################################################################
+    mean = np.sum(x1, axis=1, keepdims=True) / group_shape[1]
+    centered_x1 = x1-mean
+    var = np.sum(centered_x1*centered_x1, axis=1, keepdims=True) / group_shape[1]
+    sigma = np.sqrt(var + eps)
+    
+    x2 = centered_x1 / sigma
+    ############################################################################
+    
+    x3 = x2.reshape(x.shape)
+
+    out = x3 * gamma + beta
+    cache = x2, x3, sigma, gamma
 
     # *****END OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
     ###########################################################################
@@ -941,7 +967,20 @@ def spatial_groupnorm_backward(dout, cache):
     ###########################################################################
     # *****START OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
 
-    pass
+    x2, x3, sigma, gamma = cache
+    
+    dgamma = np.sum(dout * x3, axis=(0,2,3), keepdims=True)
+    dbeta = np.sum(dout, axis=(0,2,3), keepdims=True)
+    
+    group_shape = x2.shape
+    temp = (dout * gamma).reshape(group_shape)
+    ############################################################################
+    temp1 = np.sum(temp, axis=1, keepdims=True)
+    temp2 = np.sum(temp * x2, axis=1, keepdims=True)
+    
+    dx = (temp - (temp1 + x2*temp2) / group_shape[1]) / sigma
+    ############################################################################
+    dx = dx.reshape(dout.shape)
 
     # *****END OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
     ###########################################################################
