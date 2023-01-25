@@ -34,7 +34,13 @@ def compute_saliency_maps(X, y, model):
     ##############################################################################
     # *****START OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
 
-    pass
+    scores = model(X)
+    correct_scores = scores.gather(1, y.view(-1,1)).squeeze()
+    loss = correct_scores.sum()
+    loss.backward()
+    
+    saliency = X.grad
+    saliency, _ = saliency.abs().max(dim=1)
 
     # *****END OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
     ##############################################################################
@@ -76,8 +82,23 @@ def make_fooling_image(X, target_y, model):
     ##############################################################################
     # *****START OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
 
-    pass
+    model.eval()
+   
+    while True:
+      score = model(X_fooling).squeeze()
+      score[target_y].backward()
 
+      #if image is fooled, break.
+      if score.max(dim=0)[1] == target_y:
+        break
+    
+      #update the image with the gradient ascent
+      with torch.no_grad():
+        step = X_fooling.grad / torch.linalg.norm(X_fooling.grad)
+        X_fooling += 0.1 * step
+
+      X_fooling.grad.zero_()
+        
     # *****END OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
     ##############################################################################
     #                             END OF YOUR CODE                               #
@@ -94,8 +115,16 @@ def class_visualization_update_step(img, model, target_y, l2_reg, learning_rate)
     ########################################################################
     # *****START OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
 
-    pass
+    model.eval()
+    
+    score = model(img).squeeze()
+    score[target_y].backward()
 
+    with torch.no_grad():
+      step = img.grad / img.grad.norm()
+      img += learning_rate * step - 2 * l2_reg * img
+    img.grad.zero_()
+        
     # *****END OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
     ########################################################################
     #                             END OF YOUR CODE                         #
