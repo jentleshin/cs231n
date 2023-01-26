@@ -73,7 +73,16 @@ def rnn_step_forward(x, prev_h, Wx, Wh, b):
     ##############################################################################
     # *****START OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
 
-    pass
+    _, H = prev_h.shape
+    _, D = x.shape
+
+    # (N, H), (N, D) -> (N, H+D)
+    # (H, H), (D, H) -> (H+D, H)
+    h1 = np.concatenate((prev_h, x), axis=1)
+    W = np.concatenate((Wh, Wx), axis=0)
+    next_h = np.tanh(h1 @ W + b) 
+
+    cache = next_h, W, h1, (H, D)
 
     # *****END OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
     ##############################################################################
@@ -104,8 +113,17 @@ def rnn_step_backward(dnext_h, cache):
     # of the output value from tanh.                                             #
     ##############################################################################
     # *****START OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
+    
+    next_h, W, h1, (H, D) = cache
 
-    pass
+    dh2 = dnext_h * (1 - next_h * next_h)
+    
+    db = np.sum(dh2, axis=0)
+    dh1 = dh2 @ W.T
+    dW = h1.T @ dh2
+    
+    [dprev_h, dx, _] = np.split(dh1, [H, H+D], axis=1)
+    [dWh, dWx, _] = np.split(dW, [H, H+D], axis=0)
 
     # *****END OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
     ##############################################################################
@@ -140,7 +158,19 @@ def rnn_forward(x, h0, Wx, Wh, b):
     ##############################################################################
     # *****START OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
 
-    pass
+    N, T, D = x.shape
+    
+    cache = []
+    h_list = []
+
+    h_in = h0
+    for t in range(T):
+      x_in = x[:,t,:]
+      h_in, cac = rnn_step_forward(x_in, h_in, Wx, Wh, b)
+      cache.append(cac)
+      h_list.append(h_in)
+
+    h = np.stack(tuple(h_list), axis=1)
 
     # *****END OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
     ##############################################################################
@@ -175,7 +205,19 @@ def rnn_backward(dh, cache):
     ##############################################################################
     # *****START OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
 
-    pass
+    N, T, H = dh.shape
+
+    dx_list = []
+    dWx = dWh = db = dh_t = 0
+    for t in reversed(range(T)):
+      dy_t = dh[:,t,:]
+      dx_t, dh_t, dWx_t, dWh_t, db_t = rnn_step_backward(dy_t + dh_t, cache[t])
+
+      dWx, dWh, db = map(lambda x, y: x + y, (dWx, dWh, db), (dWx_t, dWh_t, db_t))
+      dx_list.append(dx_t)
+
+    dh0 = dh_t
+    dx = np.stack(tuple(reversed(dx_list)), axis=1)
 
     # *****END OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
     ##############################################################################
@@ -208,7 +250,8 @@ def word_embedding_forward(x, W):
     ##############################################################################
     # *****START OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
 
-    pass
+    out = W[x,:]
+    cache = x, W.shape[0]
 
     # *****END OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
     ##############################################################################
@@ -241,9 +284,16 @@ def word_embedding_backward(dout, cache):
     # HINT: Look up the function np.add.at                                       #
     ##############################################################################
     # *****START OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
+    
+    x, V = cache
 
-    pass
-
+    eye = np.eye(V)
+    x1 = eye[x]
+    
+    # x1 (N, T, V)
+    # dout (N, T, D)
+    dW = np.tensordot(x1, dout, ([0,1],[0,1]))
+    
     # *****END OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
     ##############################################################################
     #                               END OF YOUR CODE                             #
