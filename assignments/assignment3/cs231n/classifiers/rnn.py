@@ -150,19 +150,19 @@ class CaptioningRNN:
 
         # forward ##################################################################
         h0, cache1 = affine_forward(features, self.params["W_proj"], self.params["b_proj"])
-        xT, cache2 = word_embedding_forward(captions_in, self.params["W_embed"] )
-        hT, cache3 = rnn_forward(xT, h0, self.params["Wx"], self.params["Wh"], self.params["b"])
+        xT, cache2 = word_embedding_forward(captions_in, self.params["W_embed"])         
+        hT, cache3 = globals()[f"{self.cell_type}_forward"](xT, h0, self.params["Wx"], self.params["Wh"], self.params["b"])
         scoreT, cache4 = temporal_affine_forward(hT, self.params["W_vocab"], self.params["b_vocab"])
         
         # backard ##################################################################
         # scores and cpation_out passing through the temporal_softmax
         loss, grad_loss = temporal_softmax_loss(scoreT, captions_out, mask, verbose=False)
 
-        # backard ##################################################################
+        # loss #####################################################################
         # Itermediate gradients which are not used for updates padded with grad_
         # gradients which are used for updates padded with d
         grad_scoreT, dW_vocab, db_vocab = temporal_affine_backward(grad_loss, cache4)        
-        grad_xT, grad_h0, dWx, dWh, db = rnn_backward(grad_scoreT, cache3)            
+        grad_xT, grad_h0, dWx, dWh, db = globals()[f"{self.cell_type}_backward"](grad_scoreT, cache3)            
         dW_embed = word_embedding_backward(grad_xT, cache2)
         _, dW_proj, db_proj = affine_backward(grad_h0, cache1)
         
@@ -239,15 +239,27 @@ class CaptioningRNN:
         ht, cache1 = affine_forward(features, self.params["W_proj"], self.params["b_proj"])
         xt, _ = word_embedding_forward([self._start]*N, self.params["W_embed"] )
         
+        # define c0 when lstm
+        ct = 0 if self.cell_type == "lstm" else None
+
         for t in range(max_length):
-          ht, _ = rnn_step_forward(xt, ht, self.params["Wx"], self.params["Wh"], self.params["b"])
+          # conditioning on cell_type
+          if self.cell_type == "rnn":
+            ht, _ = rnn_step_forward(xt, ht, self.params["Wx"], self.params["Wh"], self.params["b"])
+          elif self.cell_type == "lstm":
+            ht, ct, _ = lstm_step_forward(xt, ht, ct, self.params["Wx"], self.params["Wh"], self.params["b"])
+          
           scoret, _ = affine_forward(ht, self.params["W_vocab"], self.params["b_vocab"])
           
-          probt = np.exp(scoret)
-          probt /= np.sum(probt, axis=1, keepdims=True)
-
-          captiont = np.apply_along_axis(lambda x: np.random.choice(np.arange(len(x)), p=x), axis=1, arr=probt)
+          # deterministic
+          captiont = np.argmax(scoret, axis=1)
           captions[:,t] = captiont
+          
+          # stochastic
+          #probt = np.exp(scoret)
+          #probt /= np.sum(probt, axis=1, keepdims=True)
+          #captiont = np.apply_along_axis(lambda x: np.random.choice(np.arange(len(x)), p=x), axis=1, arr=probt)
+          #captions[:,t] = captiont
           
           xt, _ = word_embedding_forward(captiont, self.params["W_embed"] )
 

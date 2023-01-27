@@ -341,7 +341,22 @@ def lstm_step_forward(x, prev_h, prev_c, Wx, Wh, b):
     #############################################################################
     # *****START OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
 
-    pass
+    N, H = prev_h.shape
+    _, D = x.shape
+
+    xh = np.concatenate((x, prev_h), axis=1)
+    W = np.concatenate((Wx, Wh), axis=0)
+    
+    v = xh @ W + b
+    funcs = sigmoid, sigmoid, sigmoid, np.tanh
+    
+    i_gate, f_gate, o_gate, g_value = map(lambda func,i: func(v[:,i*H:(i+1)*H]), funcs, range(4))
+    
+    next_c = f_gate * prev_c + i_gate * g_value
+    th_next_c = np.tanh(next_c)
+    next_h = o_gate * th_next_c
+    
+    cache = (prev_c, th_next_c), (i_gate, f_gate, o_gate, g_value), (xh, W), (N, D, H)
 
     # *****END OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
     ##############################################################################
@@ -376,7 +391,31 @@ def lstm_step_backward(dnext_h, dnext_c, cache):
     #############################################################################
     # *****START OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
 
-    pass
+    (prev_c, th_next_c), (i_gate, f_gate, o_gate, g_value), (xh, W), (N, D, H) = cache
+    
+    # step 0: helper functions for calculating gradients
+    func1 = lambda x: (1-x)*x
+    func2 = lambda x: 1-x*x
+      
+    # step 1 : calculate gate level gradients
+    do_gate = dnext_h * th_next_c
+    dnext_c += dnext_h * o_gate * func2(th_next_c)
+    
+    di_gate = dnext_c * g_value
+    df_gate = dnext_c * prev_c
+    dg_value = dnext_c * i_gate
+    dprev_c = dnext_c * f_gate
+    
+    # step 2 : calculate gradient of (xh @ W + b)
+    funcs  = func1,   func1,   func1,   func2
+    dgates = di_gate, df_gate, do_gate, dg_value
+    gates  = i_gate,  f_gate,  o_gate,  g_value
+    dv = np.concatenate([dgate * func(gate) for func, dgate, gate in zip(funcs,dgates,gates)], axis=1)
+    
+    # step 3 : calcuate output gradients
+    dx, dprev_h, _ = np.split(dv @ W.T, [D, D+H], axis=1)
+    dWx, dWh, _ = np.split(xh.T @ dv, [D, D+H], axis=0)
+    db = np.sum(dv, axis=0)
 
     # *****END OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
     ##############################################################################
@@ -415,7 +454,19 @@ def lstm_forward(x, h0, Wx, Wh, b):
     #############################################################################
     # *****START OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
 
-    pass
+    _, T, _ = x.shape
+    cache = []
+    h_list = []
+    
+    h_t = h0
+    c_t = np.zeros_like(h0)
+    for t in range(T):
+      x_t = x[:,t,:]
+      h_t, c_t, cac = lstm_step_forward(x_t, h_t, c_t, Wx, Wh, b)
+      cache.append(cac)
+      h_list.append(h_t)
+
+    h = np.stack(tuple(h_list), axis=1)
 
     # *****END OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
     ##############################################################################
@@ -446,7 +497,20 @@ def lstm_backward(dh, cache):
     #############################################################################
     # *****START OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
 
-    pass
+    N, T, H = dh.shape
+
+    dx_list = []
+    dWx = dWh = db = dh_t = 0
+
+    dc_t = np.zeros((N,H))
+    for t in reversed(range(T)):
+      dy_t = dh[:,t,:]
+      dx_t, dh_t, dc_t, dWx_t, dWh_t, db_t = lstm_step_backward(dy_t + dh_t, dc_t, cache[t])
+      dWx, dWh, db = map(lambda x, y: x + y, (dWx, dWh, db), (dWx_t, dWh_t, db_t))
+      dx_list.append(dx_t)
+
+    dh0 = dh_t
+    dx = np.stack(tuple(reversed(dx_list)), axis=1)
 
     # *****END OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
     ##############################################################################
