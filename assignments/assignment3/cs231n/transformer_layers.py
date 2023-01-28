@@ -37,8 +37,17 @@ class PositionalEncoding(nn.Module):
         # less than 5 lines of code.                                               #
         ############################################################################
         # *****START OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
-
-        pass
+        
+        # x = torch.arange(start=0, end=embed_dim, step=2).repeat_interleave(2)
+        # y = torch.pow(10000, x / (-1 * embed_dim))
+        # z = torch.matmul(torch.arange(max_len,dtype=torch.float).view(-1,1), y.view(1,-1))
+        # pe[:,:,0::2] = torch.sin(z[:,0::2])
+        # pe[:,:,1::2] = torch.cos(z[:,1::2])
+       
+        pe[:,:,0::2] = pe[:,:,1::2] = torch.arange(start=0, end=embed_dim, step=2)
+        pe = torch.pow(10000, pe / (-1 * embed_dim))
+        pe = pe * torch.arange(max_len).view(-1,1)
+        pe[:,:,0::2], pe[:,:,1::2] = torch.sin(pe[:,:,0::2]), torch.cos(pe[:,:,1::2])
 
         # *****END OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
         ############################################################################
@@ -70,7 +79,9 @@ class PositionalEncoding(nn.Module):
         ############################################################################
         # *****START OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
 
-        pass
+        pe = self.get_buffer("pe")
+        x += pe[:,:S,:]
+        output = self.dropout(x)
 
         # *****END OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
         ############################################################################
@@ -164,8 +175,30 @@ class MultiHeadAttention(nn.Module):
         #     function masked_fill may come in handy.                              #
         ############################################################################
         # *****START OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
+        
+        H = self.n_head
+        D = self.head_dim
 
-        pass
+        query = self.query(query).view(N,S,H,D)
+        key = self.key(key).view(N,T,H,D) 
+        value = self.value(value).view(N,T,H,D)
+        
+        query = query.permute(0,2,1,3)      #(N,H,S,D)
+        key = key.permute(0,2,3,1)          #(N,H,D,T)
+        score = torch.matmul(query, key)    #(N,H,S,T)
+        score /= math.sqrt(D)
+        
+        if attn_mask != None:
+          score = score.masked_fill(~attn_mask, float("-inf"))
+        
+        probability = F.softmax(score, dim=3)
+        probability = self.attn_drop(probability)
+        
+        #  probability:     (N,H,S,T)
+        #  value.transpose: (N,H,T,D)
+        #  result:          (N,H,S,D) => (N,S,H,D) => (N,S,E) 
+        output = torch.matmul(probability, value.transpose(1,2))
+        output = self.proj(output.transpose(1,2).reshape(N,S,E))
 
         # *****END OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
         ############################################################################
