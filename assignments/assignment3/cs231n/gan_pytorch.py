@@ -1,7 +1,9 @@
+from re import M
 import numpy as np
 
 import torch
 import torch.nn as nn
+from torch.nn.modules import ConvTranspose2d
 import torchvision
 import torchvision.transforms as T
 import torch.optim as optim
@@ -30,7 +32,7 @@ def sample_noise(batch_size, dim, seed=None):
 
     # *****START OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
 
-    pass
+    return torch.rand(batch_size,dim)*2-1
 
     # *****END OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
 
@@ -51,7 +53,14 @@ def discriminator(seed=None):
     ##############################################################################
     # *****START OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
 
-    pass
+    model = nn.Sequential(
+      Flatten(),
+      nn.Linear(784,256),
+      nn.LeakyReLU(negative_slope=0.01),
+      nn.Linear(256,256),
+      nn.LeakyReLU(negative_slope=0.01),
+      nn.Linear(256,1),
+    )
 
     # *****END OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
     ##############################################################################
@@ -76,7 +85,14 @@ def generator(noise_dim=NOISE_DIM, seed=None):
     ##############################################################################
     # *****START OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
 
-    pass
+    model = nn.Sequential(
+      nn.Linear(noise_dim,1024),
+      nn.ReLU(),
+      nn.Linear(1024,1024),
+      nn.ReLU(),
+      nn.Linear(1024,784),
+      nn.Tanh()
+    )
 
     # *****END OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
     ##############################################################################
@@ -112,8 +128,14 @@ def discriminator_loss(logits_real, logits_fake):
     loss = None
     # *****START OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
 
-    pass
-
+    N = logits_real.shape[0]
+    dtype = logits_real.dtype
+    device = logits_real.device
+    
+    true_labels = torch.ones(N).to(dtype=dtype, device=device)
+    false_labels = torch.zeros(N).to(dtype=dtype, device=device)
+    loss = bce_loss(logits_real, true_labels) + bce_loss(logits_fake, false_labels)
+    
     # *****END OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
     return loss
 
@@ -130,7 +152,12 @@ def generator_loss(logits_fake):
     loss = None
     # *****START OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
 
-    pass
+    N = logits_fake.shape[0]
+    dtype = logits_fake.dtype
+    device = logits_fake.device
+
+    label = torch.ones(N).to(dtype=dtype, device=device)
+    loss = bce_loss(logits_fake, label)
 
     # *****END OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
     return loss
@@ -149,7 +176,7 @@ def get_optimizer(model):
     optimizer = None
     # *****START OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
 
-    pass
+    optimizer = torch.optim.Adam(model.parameters(), lr=1e-3, betas=(0.5, 0.999))
 
     # *****END OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
     return optimizer
@@ -168,7 +195,14 @@ def ls_discriminator_loss(scores_real, scores_fake):
     loss = None
     # *****START OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
 
-    pass
+    mse_loss = nn.MSELoss()
+    N = scores_real.shape[0]
+    dtype = scores_real.dtype
+    device = scores_real.device
+    
+    true_labels = torch.ones(N).to(dtype=dtype, device=device)
+    false_labels = torch.zeros(N).to(dtype=dtype, device=device)
+    loss = 1/2 * (mse_loss(scores_real, true_labels) + mse_loss(scores_fake, false_labels))
 
     # *****END OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
     return loss
@@ -186,7 +220,13 @@ def ls_generator_loss(scores_fake):
     loss = None
     # *****START OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
 
-    pass
+    mse_loss = nn.MSELoss()
+    N = scores_fake.shape[0]
+    dtype = scores_fake.dtype
+    device = scores_fake.device
+
+    label = torch.ones(N).to(dtype=dtype, device=device)
+    loss = 1/2 * mse_loss(scores_fake, label)
 
     # *****END OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
     return loss
@@ -204,7 +244,20 @@ def build_dc_classifier(batch_size):
     ##############################################################################
     # *****START OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
 
-    pass
+    model = nn.Sequential(
+      nn.Conv2d(1,32,kernel_size=5,stride=1),
+      nn.LeakyReLU(negative_slope=0.01),
+      nn.MaxPool2d(kernel_size=2, stride=2),
+      nn.Conv2d(32,64,kernel_size=5,stride=1),
+      nn.LeakyReLU(negative_slope=0.01),
+      nn.MaxPool2d(kernel_size=2, stride=2),
+      Flatten(),
+      nn.Linear(4*4*64, 4*4*64),
+      nn.LeakyReLU(negative_slope=0.01),
+      nn.Linear(4*4*64, 1)
+    )
+
+    return model
 
     # *****END OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
     ##############################################################################
@@ -225,7 +278,22 @@ def build_dc_generator(noise_dim=NOISE_DIM):
     ##############################################################################
     # *****START OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
 
-    pass
+    model = nn.Sequential(
+      nn.Linear(noise_dim,1024),
+      nn.ReLU(),
+      nn.BatchNorm1d(1024),
+      nn.Linear(1024,7*7*128),
+      nn.ReLU(),
+      nn.BatchNorm1d(7*7*128),
+      nn.Unflatten(1, (128,7,7)),
+      nn.ConvTranspose2d(128,64,kernel_size=4,stride=2,padding=1),
+      nn.ReLU(),
+      nn.BatchNorm2d(64),
+      nn.ConvTranspose2d(64,1,kernel_size=4,stride=2,padding=1),
+      nn.Tanh(),
+      Flatten()
+    )
+    return model
 
     # *****END OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
     ##############################################################################
