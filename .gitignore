@@ -2,3 +2,5 @@
 **/__pycache__/
 **/build/
 **/im2col_cython.*
+**/data/
+**/pretrained_model/
